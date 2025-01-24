@@ -77,3 +77,54 @@ func TestLoadProviderFromURI(t *testing.T) {
 		})
 	}
 }
+
+func TestGetChainID(t *testing.T) {
+	tests := []struct {
+		name        string
+		network     string
+		expectedID  int
+		expectError bool
+	}{
+		{"Valid network - mainnet", "mainnet", 1, false},
+		{"Valid network - rinkeby", "rinkeby", 4, false},
+		{"Case insensitive network", "POLYGON", 137, false},
+		{"Invalid network", "invalidnetwork", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chainID, err := GetChainID(tt.network)
+			if (err != nil) != tt.expectError {
+				t.Errorf("unexpected error status: got %v, want %v", err != nil, tt.expectError)
+			}
+			if chainID != tt.expectedID {
+				t.Errorf("unexpected chain ID: got %d, want %d", chainID, tt.expectedID)
+			}
+		})
+	}
+}
+
+func TestGetNetwork(t *testing.T) {
+	tests := []struct {
+		name          string
+		chainID       int
+		expectedName  string
+		expectError   bool
+	}{
+		{"Valid chain ID - mainnet", 1, "mainnet", false},
+		{"Valid chain ID - polygon", 137, "polygon", false},
+		{"Invalid chain ID", 9999, "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			network, err := GetNetwork(tt.chainID)
+			if (err != nil) != tt.expectError {
+				t.Errorf("unexpected error status: got %v, want %v", err != nil, tt.expectError)
+			}
+			if network != tt.expectedName {
+				t.Errorf("unexpected network name: got %q, want %q", network, tt.expectedName)
+			}
+		})
+	}
+}
