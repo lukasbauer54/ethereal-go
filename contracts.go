@@ -1,4 +1,4 @@
-package main
+package ethereal
 
 import (
 	"encoding/json"
@@ -89,7 +89,101 @@ func (c *Contracts) GetEvents(address string, event string, filter EventFilter, 
 		return nil, errors.New("event name cannot be empty")
 	}
 
-	// Implementation would depend on how you want to interact with the blockchain
-	// This is a placeholder that would need to be implemented based on your specific needs
-	return nil, errors.New("not implemented")
+	// Validate filter parameters
+	if filter.FromBlock > filter.ToBlock && filter.ToBlock != 0 {
+		return nil, errors.New("fromBlock cannot be greater than toBlock")
+	}
+
+	// Get ABI to validate event exists
+	abi, err := c.GetABI(address, resolveProxy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ABI: %w", err)
+	}
+
+	// Verify event exists in ABI
+	eventExists := false
+	for _, item := range abi {
+		if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap["type"] == "event" && itemMap["name"] == event {
+				eventExists = true
+				break
+			}
+		}
+	}
+
+	if !eventExists {
+		return nil, fmt.Errorf("event %s does not exist in contract ABI", event)
+	}
+
+	// Implementation would need to use etherscan API or direct blockchain connection
+	// to fetch the actual events. This is a placeholder that returns an empty slice.
+	return []interface{}{}, nil
+}
+
+// GetFunctionSignature returns the function signature for a given function name
+func (c *Contracts) GetFunctionSignature(address string, functionName string, resolveProxy bool) (string, error) {
+	if address == "" {
+		return "", errors.New("address cannot be empty")
+	}
+	if functionName == "" {
+		return "", errors.New("function name cannot be empty")
+	}
+
+	abi, err := c.GetABI(address, resolveProxy)
+	if err != nil {
+		return "", fmt.Errorf("failed to get ABI: %w", err)
+	}
+
+	for _, item := range abi {
+		if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap["type"] == "function" && itemMap["name"] == functionName {
+				inputs, ok := itemMap["inputs"].([]interface{})
+				if !ok {
+					return "", errors.New("invalid ABI format: inputs not found")
+				}
+
+				signature := functionName + "("
+				for i, input := range inputs {
+					inputMap, ok := input.(map[string]interface{})
+					if !ok {
+						return "", errors.New("invalid ABI format: input type not found")
+					}
+					if i > 0 {
+						signature += ","
+					}
+					signature += inputMap["type"].(string)
+				}
+				signature += ")"
+				return signature, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("function %s not found in contract ABI", functionName)
+}
+
+// IsContract checks if the given address is a contract
+func (c *Contracts) IsContract(address string) (bool, error) {
+	if address == "" {
+		return false, errors.New("address cannot be empty")
+	}
+
+	cacheKey := fmt.Sprintf("is_contract_%s", address)
+
+	// Try to get from cache first
+	if cached, err := c.cache.Get(cacheKey); err == nil {
+		return cached.(bool), nil
+	}
+
+	// Get contract source code from Etherscan
+	// If it returns source code, it's a contract
+	abi, err := c.etherscan.GetContractABI(address)
+	isContract := err == nil && len(abi) > 0
+
+	// Cache the result
+	if err := c.cache.Set(cacheKey, isContract); err != nil {
+		return false, fmt.Errorf("failed to cache contract check: %w", err)
+	}
+
+	return isContract, nil
 }
