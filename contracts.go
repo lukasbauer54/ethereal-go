@@ -6,6 +6,18 @@ import (
 	"fmt"
 )
 
+// Etherscan interface defines the methods required from an Etherscan client
+type EtherscanClient interface {
+	GetContractABI(address string) (string, error)
+	GetContractSource(address string) (string, error)
+}
+
+// CacheClient interface defines the methods required from a cache implementation
+type CacheClient interface {
+	Get(key string) (interface{}, error)
+	Set(key string, value interface{}) error
+}
+
 // EventFilter defines parameters for filtering contract events
 type EventFilter struct {
 	FromBlock uint64
@@ -14,14 +26,29 @@ type EventFilter struct {
 	Topics    []string
 }
 
+// ContractEvent represents a contract event definition
+type ContractEvent struct {
+	Name      string
+	Anonymous bool
+	Inputs    []EventInput
+}
+
+// EventInput represents an event parameter
+type EventInput struct {
+	Name       string
+	Type       string
+	Indexed    bool
+	Components []EventInput
+}
+
 // Contracts handles Ethereum contract operations
 type Contracts struct {
-	etherscan *Etherscan
-	cache     *Cache
+	etherscan EtherscanClient
+	cache     CacheClient
 }
 
 // NewContracts creates a new Contracts instance
-func NewContracts(etherscan *Etherscan, cache *Cache) *Contracts {
+func NewContracts(etherscan EtherscanClient, cache CacheClient) *Contracts {
 	return &Contracts{
 		etherscan: etherscan,
 		cache:     cache,
@@ -29,7 +56,7 @@ func NewContracts(etherscan *Etherscan, cache *Cache) *Contracts {
 }
 
 // GetABI retrieves and parses the ABI for a contract
-func (c *Contracts) GetABI(address string, resolveProxy bool) (map[string]interface{}, error) {
+func (c *Contracts) GetABI(address string, resolveProxy bool) ([]map[string]interface{}, error) {
 	if address == "" {
 		return nil, errors.New("address cannot be empty")
 	}
@@ -38,7 +65,7 @@ func (c *Contracts) GetABI(address string, resolveProxy bool) (map[string]interf
 
 	// Try to get from cache first
 	if cached, err := c.cache.Get(cacheKey); err == nil {
-		return cached.(map[string]interface{}), nil
+		return cached.([]map[string]interface{}), nil
 	}
 
 	// Get ABI from Etherscan
@@ -48,17 +75,17 @@ func (c *Contracts) GetABI(address string, resolveProxy bool) (map[string]interf
 	}
 
 	// Parse ABI
-	var abiMap map[string]interface{}
-	if err := json.Unmarshal([]byte(abiString), &abiMap); err != nil {
+	var abiArray []map[string]interface{}
+	if err := json.Unmarshal([]byte(abiString), &abiArray); err != nil {
 		return nil, fmt.Errorf("failed to parse ABI: %w", err)
 	}
 
 	// Cache the result
-	if err := c.cache.Set(cacheKey, abiMap); err != nil {
+	if err := c.cache.Set(cacheKey, abiArray); err != nil {
 		return nil, fmt.Errorf("failed to cache ABI: %w", err)
 	}
 
-	return abiMap, nil
+	return abiArray, nil
 }
 
 // ListEvents returns all event names defined in the contract
