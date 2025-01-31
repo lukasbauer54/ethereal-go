@@ -41,6 +41,26 @@ type EventInput struct {
 	Components []EventInput
 }
 
+// ProxyInfo contains information about a proxy contract
+type ProxyInfo struct {
+	IsProxy        bool
+	Implementation string
+	ProxyType      string // "EIP1967", "EIP897", "Custom"
+}
+
+// FunctionCall represents a contract function call
+type FunctionCall struct {
+	Name   string
+	Inputs []FunctionParam
+}
+
+// FunctionParam represents a function parameter
+type FunctionParam struct {
+	Name  string
+	Type  string
+	Value interface{}
+}
+
 // Contracts handles Ethereum contract operations
 type Contracts struct {
 	etherscan EtherscanClient
@@ -213,4 +233,102 @@ func (c *Contracts) IsContract(address string) (bool, error) {
 	}
 
 	return isContract, nil
+}
+
+// GetProxyInfo checks if a contract is a proxy and returns its implementation
+func (c *Contracts) GetProxyInfo(address string) (*ProxyInfo, error) {
+	if address == "" {
+		return nil, errors.New("address cannot be empty")
+	}
+
+	cacheKey := fmt.Sprintf("proxy_info_%s", address)
+
+	// Try to get from cache first
+	if cached, err := c.cache.Get(cacheKey); err == nil {
+		return cached.(*ProxyInfo), nil
+	}
+
+	// Get contract source code to check for proxy patterns
+	source, err := c.etherscan.GetContractSource(address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get contract source: %w", err)
+	}
+
+	info := &ProxyInfo{
+		IsProxy: false,
+	}
+
+	// Check for EIP-1967 proxy
+	if containsEIP1967Pattern(source) {
+		info.IsProxy = true
+		info.ProxyType = "EIP1967"
+		// Implementation would need to read the implementation slot
+		// 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
+	}
+
+	// Check for EIP-897 proxy
+	if containsEIP897Pattern(source) {
+		info.IsProxy = true
+		info.ProxyType = "EIP897"
+		// Implementation would need to call implementation() function
+	}
+
+	// Cache the result
+	if err := c.cache.Set(cacheKey, info); err != nil {
+		return nil, fmt.Errorf("failed to cache proxy info: %w", err)
+	}
+
+	return info, nil
+}
+
+// EncodeFunctionCall encodes a function call into calldata
+func (c *Contracts) EncodeFunctionCall(address string, call FunctionCall) (string, error) {
+	if address == "" {
+		return "", errors.New("address cannot be empty")
+	}
+	if call.Name == "" {
+		return "", errors.New("function name cannot be empty")
+	}
+
+	// Get function signature
+	signature, err := c.GetFunctionSignature(address, call.Name, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to get function signature: %w", err)
+	}
+
+	// Implementation would need to:
+	// 1. Calculate function selector (first 4 bytes of keccak256 of signature)
+	// 2. Encode parameters according to their types
+	// 3. Concatenate selector and encoded parameters
+
+	return "", errors.New("not implemented")
+}
+
+// Helper functions for proxy detection
+func containsEIP1967Pattern(source string) bool {
+	// Implementation would check for EIP-1967 storage slots or patterns
+	return false
+}
+
+func containsEIP897Pattern(source string) bool {
+	// Implementation would check for EIP-897 implementation() function
+	return false
+}
+
+// GetImplementationAddress returns the implementation address for a proxy contract
+func (c *Contracts) GetImplementationAddress(address string) (string, error) {
+	info, err := c.GetProxyInfo(address)
+	if err != nil {
+		return "", fmt.Errorf("failed to get proxy info: %w", err)
+	}
+
+	if !info.IsProxy {
+		return "", fmt.Errorf("address %s is not a proxy contract", address)
+	}
+
+	if info.Implementation == "" {
+		return "", fmt.Errorf("implementation address not found for proxy %s", address)
+	}
+
+	return info.Implementation, nil
 }
